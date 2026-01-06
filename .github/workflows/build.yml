@@ -64,12 +64,12 @@ jobs:
           $content = @"
           #define AppName      "${{ inputs.app_name }}"
           #define AppVersion   "${{ inputs.version }}"
-          #define AppPublisher "Open Source"
+          #define AppPublisher "PyBuild"
           #define AppExeName   "${{ inputs.app_name }}.exe"
           #define AppId        "${{ inputs.app_id }}"
 
           [Setup]
-          AppId={{#AppId}
+          AppId={#AppId}
           AppName={#AppName}
           AppVersion={#AppVersion}
           AppPublisher={#AppPublisher}
@@ -164,7 +164,7 @@ jobs:
         with:
           python-version: '3.10'
       - run: |
-          pip install -r requirements.txt pyinstaller
+          pip install -r requirements.txt pyinstaller pillow
           brew install create-dmg
 
       - name: Build .app
