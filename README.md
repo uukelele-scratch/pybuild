@@ -12,6 +12,9 @@ on:
   release:
     types: [created]
 
+permissions:
+  contents: write
+
 jobs:
   build:
     uses: uukelele-scratch/pybuild/.github/workflows/build.yml@main
