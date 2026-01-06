@@ -105,7 +105,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: windows-installer
-          path: Output/*.exe
+          path: "Output/*.exe"
 
   build-linux:
     runs-on: ubuntu-22.04
@@ -154,7 +154,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: linux-appimage
-          path: *.AppImage
+          path: "*.AppImage"
 
   build-macos:
     runs-on: macos-latest
@@ -198,4 +198,4 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: macos-dmg
-          path: dist_dmg/*.dmg
+          path: "dist_dmg/*.dmg"
