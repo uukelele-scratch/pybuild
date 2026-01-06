@@ -1,0 +1,201 @@
+name: Python Build
+
+on:
+  workflow_call:
+    inputs:
+      app_name:
+        required: true
+        type: string
+      entry_point:
+        required: true
+        type: string
+        default: "src/main.py"
+      icon_ico:
+        required: true
+        type: string
+        description: "Path to .ico file (Windows)"
+      icon_png:
+        required: true
+        type: string
+        description: "Path to .png file (Linux/Mac)"
+      data_dir:
+        required: false
+        type: string
+        default: ""
+        description: "Folder to bundle (e.g. 'assets'). Destination will be same name."
+      version:
+        required: true
+        type: string
+      app_id: 
+        required: true
+        type: string
+        description: "GUID for Windows Installer"
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - run: |
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build EXE
+        shell: bash
+        run: |
+          DATA_ARG=""
+          if [ -n "${{ inputs.data_dir }}" ]; then
+            # Windows separator is semicolon
+            DATA_ARG="--add-data ${{ inputs.data_dir }};${{ inputs.data_dir }}"
+          fi
+          
+          pyinstaller --noconfirm --onedir --windowed \
+            --name "${{ inputs.app_name }}" \
+            --icon "${{ inputs.icon_ico }}" \
+            $DATA_ARG \
+            "${{ inputs.entry_point }}"
+
+      - name: Generate ISS
+        shell: pwsh
+        run: |
+          $content = @"
+          #define AppName      "${{ inputs.app_name }}"
+          #define AppVersion   "${{ inputs.version }}"
+          #define AppPublisher "Open Source"
+          #define AppExeName   "${{ inputs.app_name }}.exe"
+          #define AppId        "${{ inputs.app_id }}"
+
+          [Setup]
+          AppId={{#AppId}
+          AppName={#AppName}
+          AppVersion={#AppVersion}
+          AppPublisher={#AppPublisher}
+          DefaultDirName={autopf}\{#AppName}
+          DisableProgramGroupPage=yes
+          OutputBaseFilename=${{ inputs.app_name }}_Setup_${{ inputs.version }}
+          Compression=lzma2
+          SolidCompression=yes
+          ArchitecturesInstallIn64BitMode=x64
+
+          [Languages]
+          Name: "english"; MessagesFile: "compiler:Default.isl"
+
+          [Tasks]
+          Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
+
+          [Files]
+          Source: "dist\${{ inputs.app_name }}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+
+          [Icons]
+          Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExeName}"
+          Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; Tasks: desktopicon
+
+          [Run]
+          Filename: "{app}\{#AppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(AppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
+          "@
+          Set-Content -Path "setup.iss" -Value $content
+
+      - uses: Minionguyjpro/Inno-Setup-Action@v1.2.2
+        with:
+          path: setup.iss
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: Output/*.exe
+
+  build-linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - run: pip install -r requirements.txt pyinstaller
+
+      - name: Build Executable
+        run: |
+          DATA_ARG=""
+          if [ -n "${{ inputs.data_dir }}" ]; then
+            # Linux separator is colon
+            DATA_ARG="--add-data ${{ inputs.data_dir }}:${{ inputs.data_dir }}"
+          fi
+          
+          pyinstaller --noconfirm --onedir --windowed \
+            --name "${{ inputs.app_name }}" \
+            $DATA_ARG \
+            "${{ inputs.entry_point }}"
+
+      - name: Package AppImage
+        run: |
+          mkdir -p AppDir/usr/bin
+          mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps/
+          cp -r dist/${{ inputs.app_name }}/* AppDir/usr/bin/
+          cp ${{ inputs.icon_png }} AppDir/${{ inputs.app_name }}.png
+          cp ${{ inputs.icon_png }} AppDir/usr/share/icons/hicolor/256x256/apps/${{ inputs.app_name }}.png
+          
+          cat > AppDir/${{ inputs.app_name }}.desktop <<EOF
+          [Desktop Entry]
+          Type=Application
+          Name=${{ inputs.app_name }}
+          Exec=${{ inputs.app_name }}
+          Icon=${{ inputs.app_name }}
+          Categories=Game;Utility;
+          EOF
+          
+          ln -s usr/bin/${{ inputs.app_name }} AppDir/AppRun
+          wget -O appimagetool "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage"
+          chmod +x appimagetool
+          ./appimagetool AppDir ${{ inputs.app_name }}-${{ inputs.version }}-linux.AppImage
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-appimage
+          path: *.AppImage
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - run: |
+          pip install -r requirements.txt pyinstaller
+          brew install create-dmg
+
+      - name: Build .app
+        run: |
+          DATA_ARG=""
+          if [ -n "${{ inputs.data_dir }}" ]; then
+            # Mac separator is colon
+            DATA_ARG="--add-data ${{ inputs.data_dir }}:${{ inputs.data_dir }}"
+          fi
+          
+          pyinstaller --noconfirm --windowed \
+            --name "${{ inputs.app_name }}" \
+            --icon "${{ inputs.icon_png }}" \
+            $DATA_ARG \
+            "${{ inputs.entry_point }}"
+
+      - name: Create DMG
+        run: |
+          mkdir -p dist_dmg
+          create-dmg \
+            --volname "${{ inputs.app_name }}" \
+            --window-pos 200 120 \
+            --window-size 800 400 \
+            --icon-size 100 \
+            --icon "${{ inputs.app_name }}.app" 200 190 \
+            --hide-extension "${{ inputs.app_name }}.app" \
+            --app-drop-link 600 185 \
+            "dist_dmg/${{ inputs.app_name }}-${{ inputs.version }}.dmg" \
+            "dist/${{ inputs.app_name }}.app"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-dmg
+          path: dist_dmg/*.dmg
