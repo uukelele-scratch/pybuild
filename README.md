@@ -36,4 +36,4 @@ jobs:
             macos-dmg/*.dmg
 ```
 
-Go to Actions and trigger a workflow run for Deploy.
+Then, publish a release.
